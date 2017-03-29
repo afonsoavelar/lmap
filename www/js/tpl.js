@@ -63,8 +63,8 @@ function callAjax2(action,params)
 				case "updateDriverLocation":
 				break;
 												
-				default:
-				onsenAlert( getTrans("Network error has occurred please try again!",'network_error') );		
+				default:				
+				//onsenAlert( getTrans("Network error has occurred please try again!",'network_error') );		
 				break;
 			}
 		}
@@ -297,7 +297,7 @@ function TaskDetailsChevron_3( data )
 	}
 	dump(data);
 	var html='';
-	html+='<ons-list-item class="with-bottom-100">';
+	html+='<ons-list-item class="with-bottom-100x">';
      html+='<ons-col>';            
          html+='<div class="table">';
              html+='<div class="col a">';

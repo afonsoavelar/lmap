@@ -12,6 +12,8 @@ var ajax_request2;
 var ajax_request3;
 var map;
 var watchID;
+var push;
+var app_running_status;
 
 jQuery.fn.exists = function(){return this.length>0;}
 
@@ -82,16 +84,27 @@ document.addEventListener("deviceready", function() {
 	
 	navigator.splashscreen.hide();
 	
+	app_running_status="active";
+	
+	/*check if background tracking is already on if yes then turn off*/
+	var bg_tracking = getStorage("bg_tracking");	
+	if (!empty(bg_tracking)){
+		if ( bg_tracking==1 || bg_tracking=="1"){
+			backgroundGeolocation.stop();
+		}
+	}
+	
 	if ( !empty(krms_driver_config.PushProjectID)) {
 		
-		var push = PushNotification.init({
+		push = PushNotification.init({
 	        "android": {
-	            "senderID": krms_driver_config.PushProjectID
+	            "senderID": krms_driver_config.PushProjectID,
+	            "clearBadge": true
 	        },	        
 	        "ios": {"alert": "true", "badge": "true", "sound": "true", "clearBadge": "true" }, 
 	        "windows": {} 
 	    });
-	    
+	    	    
 	    push.on('registration', function(data) {     	     	
 	    	setStorage("device_id", data.registrationId );
 	    	setStorage("device_platform", device.platform );	    	     	        
@@ -136,6 +149,7 @@ document.addEventListener("deviceready", function() {
 	     	  	 }
 	     	 } else {	     	 	 
 	     	 	 //when the app is not active
+	     	 	 
 	     	 	 setBaloon();	     	 	 
 	     	  	 switch ( data.additionalData.data.actions )
 	     	  	 {
@@ -166,7 +180,8 @@ document.addEventListener("deviceready", function() {
 	        
 	    push.on('error', function(e) {
 	       //onsenAlert("push error");
-	    });   
+	    }); 	    	 
+	    
 	}
 	
  }, false);
@@ -295,7 +310,7 @@ document.addEventListener("show", function(event) {
 		case "pageLogin":	
 		if ( isAutoLogin()!=1){			
 			checkGPS();
-		}	
+		}			
 		break;				
 		
 		case "home":	
@@ -308,6 +323,9 @@ document.addEventListener("show", function(event) {
 		
 		case "Signature":
 		    callAjax('loadSignature', 'task_id='+$(".task_id_global").val() );
+		break;
+				
+		default:
 		break;
 		
 	}	
@@ -322,7 +340,8 @@ document.addEventListener("init", function(event) {
 	         });*/
 			
 			case "Map":			  
-			  dump('init map');			  
+			  dump('init map');		
+			  TransLatePage();	  
 			break;
 					    			
 			case "Notification":
@@ -452,6 +471,10 @@ document.addEventListener("init", function(event) {
 	                }
 					
 					dump(ajax_url+"/CalendarTask/?token=" + getStorage("kr_token") + params);
+					
+					if(!empty(krms_driver_config.APIHasKey)){
+						params+="&api_key="+krms_driver_config.APIHasKey;
+					}		
 					
 				    $.ajax({
 				     	 type: "post",
@@ -648,6 +671,9 @@ function callAjax(action,params)
 		   			setStorage("kr_location_accuracy", data.details.location_accuracy);
 		   			setStorage("device_vibration", data.details.device_vibration);		   			
 		   			
+		   			setStorage("app_disabled_bg_tracking", data.details.app_disabled_bg_tracking);
+		   			setStorage("app_track_interval", data.details.app_track_interval);
+		   			
 					kNavigator.pushPage("home.html", {
 					  animation: 'slide',
 					  callback: function(){		 					  	  
@@ -692,7 +718,8 @@ function callAjax(action,params)
 		   			   TaskAddSignature( data.details ) +   // task signatore
 		   			   DriverNotes( data.history_notes , data.details ) +	// driver notes	   			   
 		   			   addPhotoChevron(data.details) +  // take picture
-		   			   TaskDetailsChevron_3(data.details.history)
+		   			   TaskDetailsChevron_3(data.details.history) + 
+		   			   '<div style="height:100px;"></div>'
 		   			);
 		   			
 		   			//show signature
@@ -702,6 +729,11 @@ function callAjax(action,params)
 		   			);
 		   			
 		   			$(".task_id_global").val( data.details.task_id );
+		   			
+		   			/*picture resize settings*/		   			
+		   			setStorage("app_resize_picture" , data.details.resize_picture.app_enabled_resize_pic );
+		   			setStorage("app_resize_width" , data.details.resize_picture.app_resize_width );
+		   			setStorage("app_resize_height" , data.details.resize_picture.app_resize_height );
 		   					   					   			
 		   			break;
 		   			
@@ -816,10 +848,20 @@ function callAjax(action,params)
 		   			   //set sounds url
 		   			   setStorage("notification_sound_url",data.details.notification_sound_url);
 		   			   
-		   			   // set the language id
+		   			   // set the language id		   			   
+		   			   dump( "current languae id : " + getStorage("kr_lang_id") );
 		   			   if ( empty( getStorage("kr_lang_id") )){
-		   			   	  setStorage("kr_lang_id","en");  
-		   			   } 
+		   			   	  setStorage("kr_lang_id","en");
+		   			   	  if ( !empty(data.details.app_default_lang) ){
+		   			   	  	  setStorage("kr_lang_id", data.details.app_default_lang );
+		   			   	  }
+		   			   } else {
+		   			   	  if ( data.details.app_force_lang==1){
+		   			   	  	  setStorage("kr_lang_id", data.details.app_default_lang );
+		   			   	  }
+		   			   }		   			   
+		   			   
+		   			   dump( "FINAL languae id : " + getStorage("kr_lang_id") );
 		   			   
 		   			   var auto_login = isAutoLogin();
 	                   
@@ -1072,10 +1114,10 @@ function AjaxTask(action, params , done)
 	
 }
 
-function getTrans(words,words_key)
+/*function getTrans(words,words_key)
 {
 	
-}
+}*/
 
 function onsenAlert(message,dialog_title)
 {
@@ -1135,7 +1177,9 @@ function forgotPass()
 
 var xx=0;
 var lastUpdateTime,
-minFrequency = 10*2000;
+//minFrequency = 10*2000;
+//minFrequency = 10*1000;
+minFrequency = 8000;
 
 function getCurrentPosition()
 {	 
@@ -1148,6 +1192,18 @@ function getCurrentPosition()
 	     dump(  position.coords.longitude );	   
 	     
 	     var now = new Date();
+
+	     //toastMsg(app_running_status);	     
+	     if(!empty(app_running_status)){
+		     if (app_running_status=="background"){
+		     	 return;
+		     }
+	     }
+	     	     	    
+	     app_track_interval = getStorage("app_track_interval");
+	     if (!empty(app_track_interval)){
+	     	 minFrequency=app_track_interval;
+	     }	     	     	     	     
 	     
 	     if(!empty(lastUpdateTime)){	     	 
 	     	 var freq_time = now.getTime() - lastUpdateTime.getTime();	 
@@ -1160,6 +1216,16 @@ function getCurrentPosition()
 	     //$(".watch-id").html( xx++ );	     
 	     
 	     params = 'lat='+ position.coords.latitude + "&lng=" + position.coords.longitude;
+	     params+="&app_version="+ BuildInfo.version;
+	     
+	     params+="&altitude="+ position.coords.altitude;
+	     params+="&accuracy="+ position.coords.accuracy;
+	     params+="&altitudeAccuracy="+ position.coords.altitudeAccuracy;
+	     params+="&heading="+ position.coords.heading;
+	     params+="&speed="+ position.coords.speed;
+	     params+="&track_type=active";
+	     
+	     
 	     callAjax2('updateDriverLocation', params);
 	     
 	 },function(error) {
@@ -1711,6 +1777,10 @@ function viewTaskMap(task_id , task_lat, task_lng , delivery_address )
 	 setStorage("task_lng", task_lng );
 	 setStorage("delivery_address", delivery_address );
 	
+	 if(!isDebug()){
+	   loader.show();
+	 }
+		 
 	 kNavigator.pushPage("Map.html", {
 		  animation: 'fade',
 		  callback: function(){	
@@ -1727,6 +1797,7 @@ function viewTaskMapInit()
 	var task_lng=getStorage('task_lng');
 	dump(task_lng);
 	dump(task_lat);
+		
 		
 	google_lat = new plugin.google.maps.LatLng( task_lat , task_lng );
 	
@@ -1755,9 +1826,14 @@ function viewTaskMapInit()
 	    });
 	    
 	    map.clear();
-		map.off();		
+		map.off();
 			    
         map.setBackgroundColor('white');
+                
+        hideAllModal(); 
+        
+	    map.setCenter(google_lat);
+	    map.setZoom(17);	
         
         map.on(plugin.google.maps.event.MAP_READY, onMapInit); 
         
@@ -1785,10 +1861,10 @@ function onMapInit()
 	    	  
 	    	 var driver_location = new plugin.google.maps.LatLng(position.coords.latitude , position.coords.longitude); 	
 	    	 //demo
-	    	 //var driver_location = new plugin.google.maps.LatLng( 34.039413 , -118.25480649999997 ); 	
-	    	 
+	    	 //var driver_location = new plugin.google.maps.LatLng( 34.039413 , -118.25480649999997 ); 
 	    	 var destination = new plugin.google.maps.LatLng( task_lat , task_lng );
 	    	 
+	    	  	 
 	    	  map.addPolyline({
 			    points: [
 			      destination,
@@ -2079,6 +2155,8 @@ function addPhotoSelection()
 
 function showCemara()
 {
+
+	var app_resize_picture = getStorage("app_resize_picture");
 	
 	if (isDebug()){
 		toastMsg("show camera");			
@@ -2087,13 +2165,35 @@ function showCemara()
 		return;
 	}
 	
-	navigator.camera.getPicture(uploadTaskPhoto, function(){
+	var cam_options = {
+		destinationType: Camera.DestinationType.FILE_URI,
+	    sourceType: Camera.PictureSourceType.CAMERA,
+	    popoverOptions: new CameraPopoverOptions(300, 300, 100, 100, Camera.PopoverArrowDirection.ARROW_ANY)
+	};
+	
+	if ( app_resize_picture==1){
+		cam_options={
+			destinationType: Camera.DestinationType.FILE_URI,
+		    sourceType: Camera.PictureSourceType.CAMERA,
+		    popoverOptions: new CameraPopoverOptions(300, 300, 100, 100, Camera.PopoverArrowDirection.ARROW_ANY),
+		    targetHeight: getStorage("app_resize_height") ,
+			targetWidth:  getStorage("app_resize_width")
+		};
+	}
+		
+	/*navigator.camera.getPicture(uploadTaskPhoto, function(){
 		toastMsg( getTrans("Get photo failed","get_photo_failed") );
 	},{
 	    destinationType: Camera.DestinationType.FILE_URI,
 	    sourceType: Camera.PictureSourceType.CAMERA,
-	    popoverOptions: new CameraPopoverOptions(300, 300, 100, 100, Camera.PopoverArrowDirection.ARROW_ANY)
-    });
+	    popoverOptions: new CameraPopoverOptions(300, 300, 100, 100, Camera.PopoverArrowDirection.ARROW_ANY),
+	    targetHeight:100,
+		targetWidth:100
+    });*/
+	
+	navigator.camera.getPicture(uploadTaskPhoto, function(){
+		toastMsg( getTrans("Get photo failed","get_photo_failed") );
+	}, cam_options );
 }
 
 function uploadTaskPhoto(imageURI)
@@ -2220,7 +2320,7 @@ function showDeviceGallery(action_type)
 		},{
 		    destinationType: Camera.DestinationType.FILE_URI,
 		    sourceType: Camera.PictureSourceType.PHOTOLIBRARY,
-		    popoverOptions: new CameraPopoverOptions(300, 300, 100, 100, Camera.PopoverArrowDirection.ARROW_ANY)
+		    popoverOptions: new CameraPopoverOptions(300, 300, 100, 100, Camera.PopoverArrowDirection.ARROW_ANY)		    
 	    });
 	    
 	    
@@ -2237,7 +2337,7 @@ function showDeviceGallery(action_type)
 		},{
 		    destinationType: Camera.DestinationType.FILE_URI,
 		    sourceType: Camera.PictureSourceType.PHOTOLIBRARY,
-		    popoverOptions: new CameraPopoverOptions(300, 300, 100, 100, Camera.PopoverArrowDirection.ARROW_ANY)
+		    popoverOptions: new CameraPopoverOptions(300, 300, 100, 100, Camera.PopoverArrowDirection.ARROW_ANY)		    
 	    });
 		
 		break;
@@ -2613,4 +2713,109 @@ function deletePhoto(id)
         }
       }
     });
+}
+
+/*Location tracking in background*/
+
+document.addEventListener("pause", onBackgroundMode, false);
+
+function onBackgroundMode() {    
+    	
+	app_running_status="background";
+	
+	if ( !hasConnection() ){	
+		backgroundGeolocation.stop();
+		return;
+	}
+	
+	var kr_token=getStorage("kr_token");
+	//toastMsg(kr_token);
+	if(empty(kr_token)){
+		backgroundGeolocation.stop();
+		return;
+	}
+	
+	var app_disabled_bg_tracking=getStorage("app_disabled_bg_tracking");
+	if (app_disabled_bg_tracking==1 || app_disabled_bg_tracking=="1"){
+		backgroundGeolocation.stop();
+		return;
+	}
+	
+	var min_frequency = getStorage("app_track_interval");
+	
+	if (min_frequency<=0){
+		min_frequency=8000;
+	}
+	if (empty(min_frequency)){
+		min_frequency=8000;
+	}
+	
+	//toastMsg(min_frequency);
+		
+	backgroundGeolocation.configure(function(location){
+		
+		//toastMsg('[js] BackgroundGeolocation callback:  ' + location.latitude + ',' + location.longitude);
+		
+		//callAjax2("UpdateActivity","lat="+location.latitude + "&lng="+ location.longitude );
+		params = 'lat='+ location.latitude + "&lng=" + location.longitude + "&app_version=" + BuildInfo.version;
+		
+		params+="&altitude="+ location.altitude;
+	    params+="&accuracy="+ location.accuracy;
+	    params+="&altitudeAccuracy=";
+	    params+="&heading="+ location.bearing;
+	    params+="&speed="+ location.speed;
+	    params+="&track_type=background";
+		
+        callAjax2('updateDriverLocation', params);
+		
+		/*stop watch position*/
+        navigator.geolocation.clearWatch(watchID);
+		
+		backgroundGeolocation.finish();
+		//20000
+		
+	}, function(error){
+		
+		 toastMsg('BackgroundGeolocation error');
+		
+	}, {
+        desiredAccuracy: 10,
+        stationaryRadius: 20,
+        distanceFilter: 1,
+	        interval: min_frequency,
+        activitiesInterval: min_frequency,
+        locationProvider: backgroundGeolocation.provider.ANDROID_ACTIVITY_PROVIDER,
+        stopOnStillActivity:false,
+        notificationTitle: BuildInfo.name ,
+        notificationText: getTrans("Tracking","tracking") +  "...",
+        pauseLocationUpdates:false,
+        fastestInterval: min_frequency,
+        stopOnTerminate: true,
+        stopOnStillActivity: false
+    });
+	
+    setStorage("bg_tracking",1);
+    /*stop watch position*/
+    navigator.geolocation.clearWatch(watchID);
+    
+    backgroundGeolocation.start();   
+}
+
+document.addEventListener("resume", onForegroundMode, false);
+
+function onForegroundMode()
+{	
+	app_running_status="active";
+	
+	setStorage("bg_tracking",2);
+	checkGPS();
+	backgroundGeolocation.stop();
+		
+	/*clear badge*/
+	push.setApplicationIconBadgeNumber(function() {
+	    //console.log('success');
+	}, function() {
+	    //console.log('error');
+	}, 0);
+
 }
